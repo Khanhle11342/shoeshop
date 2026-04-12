@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: mysql-db
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: shoeshop
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./shoe_shopdb.sql:/docker-entrypoint-initdb.d/init.sql
+
+  app:
+    build: .
+    container_name: shoeshop
+    ports:
+      - "8888:8080"
+    depends_on:
+      - mysql
+
+volumes:
+  mysql-data:

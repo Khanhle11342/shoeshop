@@ -1,8 +1,18 @@
-HELP.md
+### Java / Spring Boot ###
 target/
+*.log
+*.class
+
+### Maven ###
+.mvn/
 !.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**
-!**/src/test/**
+
+### Environment ###
+.env
+
+### OS ###
+.DS_Store
+Thumbs.db
 
 ### STS ###
 .apt_generated
@@ -29,3 +39,4 @@ build/
 
 ### VS Code ###
 .vscode/
+
