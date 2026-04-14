@@ -15,10 +15,13 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Login Docker
-        run: docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} -p ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Login Docker (secure)
+        run: |
+          echo ${{ secrets.REGISTRY_PASSWORD }} | docker login ${{ secrets.REGISTRY_URL }} \
+          -u ${{ secrets.REGISTRY_USER }} --password-stdin
 
       - name: Build Image
         run: docker build -t $DOCKER_IMAGE .
@@ -32,21 +35,39 @@ jobs:
 
     steps:
       - name: Login Docker
-        run: docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} -p ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          echo ${{ secrets.REGISTRY_PASSWORD }} | docker login ${{ secrets.REGISTRY_URL }} \
+          -u ${{ secrets.REGISTRY_USER }} --password-stdin
 
       - name: Pull Image
         run: docker pull $DOCKER_IMAGE
 
-      - name: Remove old container
+      - name: Stop old container (graceful)
         run: docker rm -f $CONTAINER_NAME || true
 
-      - name: Run container
-        run: docker run -d -p 8080:8080 --name $CONTAINER_NAME $DOCKER_IMAGE
+      - name: Run new container
+        run: |
+          docker run -d \
+            -p 8080:8080 \
+            --name $CONTAINER_NAME \
+            --restart always \
+            -v /datas/shoeshop/logs:/app/logs \
+            $DOCKER_IMAGE
+
+      - name: Wait for app
+        run: sleep 10
+
+      - name: Health check
+        run: |
+          curl -f http://localhost:8080 || (echo "App failed!" && exit 1)
 
   show-log:
     runs-on: self-hosted
     needs: deploy
 
     steps:
-      - run: sleep 20
-      - run: docker logs $CONTAINER_NAME
+      - name: Wait
+        run: sleep 5
+
+      - name: Show logs
+        run: docker logs --tail 200 $CONTAINER_NAME
