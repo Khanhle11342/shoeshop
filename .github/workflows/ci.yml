@@ -1,9 +1,12 @@
-name: Spring Boot CI-CD
+name: Spring Boot CI-CD (Docker + GHCR)
 
 on:
   push:
     tags:
       - "*"
+
+env:
+  IMAGE_NAME: shoeshop
 
 jobs:
   build:
@@ -22,7 +25,7 @@ jobs:
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: Upload artifact
+      - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
           name: jar
@@ -36,28 +39,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download artifact
+      - name: Download jar
         uses: actions/download-artifact@v4
         with:
           name: jar
           path: target
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
-        run: docker build -t shoeshop:latest .
+        run: |
+          docker build -t ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
 
   deploy:
     needs: docker
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to server via SSH
+      - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+
+            docker pull ghcr.io/${{ github.repository_owner }}/shoeshop:latest
+
             docker stop shoeshop || true
             docker rm shoeshop || true
-            docker pull shoeshop:latest || true
-            docker run -d --name shoeshop -p 8081:8081 shoeshop:latest
+
+            docker run -d \
+              --name shoeshop \
+              -p 8081:8081 \
+              ghcr.io/${{ github.repository_owner }}/shoeshop:latest
