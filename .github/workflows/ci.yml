@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline (ECR)
 
 on:
   push:
@@ -8,20 +8,28 @@ on:
 env:
   IMAGE_NAME: shoeshop
   CONTAINER_NAME: shoeshop
-  DOCKER_IMAGE: ${{ secrets.REGISTRY_URL }}/${{ secrets.REGISTRY_PROJECT }}/shoeshop:${{ github.ref_name }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  DOCKER_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/shoeshop:${{ github.ref_name }}
 
 jobs:
   build-and-push:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Login Docker (secure)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
         run: |
-          echo ${{ secrets.REGISTRY_PASSWORD }} | docker login ${{ secrets.REGISTRY_URL }} \
-          -u ${{ secrets.REGISTRY_USER }} --password-stdin
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Build Image
         run: docker build -t $DOCKER_IMAGE .
@@ -34,40 +42,28 @@ jobs:
     needs: build-and-push
 
     steps:
-      - name: Login Docker
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
         run: |
-          echo ${{ secrets.REGISTRY_PASSWORD }} | docker login ${{ secrets.REGISTRY_URL }} \
-          -u ${{ secrets.REGISTRY_USER }} --password-stdin
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Pull Image
         run: docker pull $DOCKER_IMAGE
 
-      - name: Stop old container (graceful)
+      - name: Remove old container
         run: docker rm -f $CONTAINER_NAME || true
 
-      - name: Run new container
+      - name: Run container
         run: |
           docker run -d \
             -p 8080:8080 \
             --name $CONTAINER_NAME \
             --restart always \
-            -v /datas/shoeshop/logs:/app/logs \
             $DOCKER_IMAGE
-
-      - name: Wait for app
-        run: sleep 10
-
-      - name: Health check
-        run: |
-          curl -f http://localhost:8080 || (echo "App failed!" && exit 1)
-
-  show-log:
-    runs-on: self-hosted
-    needs: deploy
-
-    steps:
-      - name: Wait
-        run: sleep 5
-
-      - name: Show logs
-        run: docker logs --tail 200 $CONTAINER_NAME
