@@ -20,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ✅ FIX: Build Spring Boot trước khi docker build
+      - name: Build Maven Project
+        run: mvn clean package -DskipTests
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -32,11 +36,11 @@ jobs:
           aws ecr get-login-password --region $AWS_REGION \
           | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-      - name: Build Image
+      - name: Build Docker Image
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
-      - name: Push Image
+      - name: Push Docker Image
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
@@ -76,4 +80,4 @@ jobs:
 
     steps:
       - run: sleep 20
-      - run: docker logs $CONTAINER_NAME
+      - run: docker logs $CONTAINER_NAME      
