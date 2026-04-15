@@ -7,8 +7,11 @@ on:
 
 env:
   IMAGE_NAME: shoeshop
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECR_REPOSITORY: shoeshop
+  IMAGE_TAG: ${{ github.ref_name }}
   CONTAINER_NAME: shoeshop
-  DOCKER_IMAGE: ${{ secrets.REGISTRY_URL }}/${{ secrets.REGISTRY_PROJECT }}/shoeshop:${{ github.ref_name }}
 
 jobs:
   build-and-push:
@@ -17,14 +20,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login Docker
-        run: docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} -p ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Build Image
-        run: docker build -t $DOCKER_IMAGE .
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
       - name: Push Image
-        run: docker push $DOCKER_IMAGE
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
   deploy:
     runs-on: self-hosted
@@ -36,19 +50,25 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: 'us-east-1'  # Thêm vùng AWS ở đây
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login Docker
-        run: docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} -p ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Pull Image
-        run: docker pull $DOCKER_IMAGE
+        run: |
+          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Remove old container
         run: docker rm -f $CONTAINER_NAME || true
 
       - name: Run container
-        run: docker run -d -p 8080:8080 --name $CONTAINER_NAME $DOCKER_IMAGE
+        run: |
+          docker run -d -p 8080:8080 \
+          --name $CONTAINER_NAME \
+          $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
   show-log:
     runs-on: self-hosted
