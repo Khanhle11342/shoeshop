@@ -1,83 +1,40 @@
-name: CI/CD Pipeline
+name: Build and Push to ECR
 
 on:
   push:
-    tags:
-      - '*'
+    branches:
+      - main
 
-env:
-  IMAGE_NAME: shoeshop
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-  ECR_REPOSITORY: shoeshop
-  IMAGE_TAG: ${{ github.ref_name }}
-  CONTAINER_NAME: shoeshop
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  build-and-push:
-    runs-on: self-hosted
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # ✅ FIX: dùng full path Maven
-      - name: Build Maven Project
-        run: /usr/bin/mvn clean package -DskipTests
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin $ECR_REGISTRY
-
-      - name: Build Docker Image
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-
-      - name: Push Docker Image
-        run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
   deploy:
-    runs-on: self-hosted
-    needs: build-and-push
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Configure AWS credentials
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assume AWS Role via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: docker build -t shoeshop .
+
+      - name: Tag image
         run: |
-          aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin $ECR_REGISTRY
+          docker tag shoeshop:latest \
+          390844782324.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/shoeshop:latest
 
-      - name: Pull Image
+      - name: Push image
         run: |
-          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Remove old container
-        run: docker rm -f $CONTAINER_NAME || true
-
-      - name: Run container
-        run: |
-          docker run -d -p 8080:8080 \
-          --name $CONTAINER_NAME \
-          $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-  show-log:
-    runs-on: self-hosted
-    needs: deploy
-
-    steps:
-      - run: sleep 20
-      - run: docker logs $CONTAINER_NAME
+          docker push \
+          390844782324.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/shoeshop:latest
