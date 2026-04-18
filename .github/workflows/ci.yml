@@ -14,27 +14,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Assume AWS Role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build image
-        run: docker build -t shoeshop .
+      - run: mvn clean package -DskipTests
 
-      - name: Tag image
-        run: |
+      - run: ls -lh target/
+
+      - run: docker build -f Dockerfile -t shoeshop $GITHUB_WORKSPACE
+
+      - run: |
           docker tag shoeshop:latest \
           390844782324.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/shoeshop:latest
 
-      - name: Push image
-        run: |
+      - run: |
           docker push \
           390844782324.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/shoeshop:latest
